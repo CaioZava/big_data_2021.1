@@ -5,6 +5,26 @@ from json import dumps
 from time import sleep
 import argparse
 from datetime import datetime, timedelta
+import sys
+
+def send_tweets_to_spark(df1, tcp_connection): # funcao de mandar mensagem bruta pro spark, nao sei se vai ser usada
+ for ind, line in df1.iterrows():
+     try:
+         tweet_text = line['tweet']
+         #print("Tweet Text: " + tweet_text)
+         #print ("------------------------------------------")
+         tcp_connection.send(tweet_text + '\n')
+     except:
+         e = sys.exc_info()[0]
+         print("Error: %s" % e)
+
+def produce_to_kafka(df1, producer):
+    for ind, line in df1.iterrows():
+        line = str(line.to_dict())  # bytes(str(line.to_dict()), 'utf-8')
+        data = {'line': line}
+        # print(ind)
+        producer.send('client_side', value=data)
+        sleep(0.1)
 
 def twint_worker(keywords):
     # Configure
@@ -25,9 +45,9 @@ def twint_worker(keywords):
         except:
             pass
         c = twint.Config()
-        c.Search = keywords
+        c.Search = '#BBB21'#keywords
         c.Lang = "pt"
-        c.Limit = 5000000
+        c.Limit = 100#5000000
         c.Store_json = True
         #c.Until = max(datetime.strptime(until, "%Y-%m-%d %H:%M:%S"), datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
         #print(max(datetime.strptime(until, "%Y-%m-%d %H:%M:%S"), datetime.now()).strftime("%Y-%m-%d %H:%M:%S"))
@@ -37,7 +57,7 @@ def twint_worker(keywords):
 
         # Run
         twint.run.Search(c)
-        df1 = twint.storage.panda.Tweets_df
+        df1 = twint.storage.panda.Tweets_df # df = df1[['id', 'created_at', 'date', 'tweet', 'user_id', 'user_id_str', 'username', 'nlikes', 'nretweets']]
         #print(df1)
         if not df1.empty:
             max_date = datetime.strptime(max(df1['date']), "%Y-%m-%d %H:%M:%S") + timedelta(0, 1)
@@ -48,14 +68,7 @@ def twint_worker(keywords):
         #until = until + timedelta(0, 60)
         #until = until.strftime("%Y-%m-%d %H:%M:%S")
 
-
-
-        for ind, line in df1.iterrows():
-            line = str(line.to_dict())#bytes(str(line.to_dict()), 'utf-8')
-            data = {'line': line}
-            #print(ind)
-            producer.send('client_side', value=data)
-            sleep(0.1)
+        produce_to_kafka(df1, producer)
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
